@@ -1,6 +1,35 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 export default function Hero() {
+  const router = useRouter();
+
+  async function handleStartLearning() {
+    try {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        router.push("/modules");
+      } else {
+        router.push("/register");
+      }
+    } catch (error) {
+      console.error(
+        "Unable to check authentication status:",
+        error
+      );
+
+      router.push("/register");
+    }
+  }
+
   return (
     <section className="relative w-full overflow-hidden">
       {/* Background glow */}
@@ -16,6 +45,7 @@ export default function Hero() {
           {/* Badge */}
           <div className="mb-7 inline-flex max-w-full items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--muted)] px-4 py-2 text-center text-sm font-medium">
             <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--primary)]" />
+
             <span className="truncate">
               Interactive Networking Education
             </span>
@@ -38,12 +68,13 @@ export default function Hero() {
 
           {/* Buttons */}
           <div className="mx-auto mt-9 flex w-full max-w-md flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
-            <Link
-              href="/register"
+            <button
+              type="button"
+              onClick={handleStartLearning}
               className="flex w-full items-center justify-center rounded-xl bg-[var(--primary)] px-7 py-3.5 font-semibold text-[var(--primary-foreground)] shadow-lg transition hover:-translate-y-0.5 hover:opacity-90 sm:w-auto"
             >
               Start Learning →
-            </Link>
+            </button>
 
             <Link
               href="/labs"
