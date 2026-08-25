@@ -11,7 +11,7 @@ import {
   WebSocket,
 } from "ws";
 
-const PORT = 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 const docker = new Docker();
 
@@ -29,13 +29,6 @@ const commandHistories = new Map<
   string[]
 >();
 
-/*
- * Commands accepted by the practical
- * assessment checker.
- *
- * Module 1, Module 2, and Module 3
- * assessment tasks are included.
- */
 const taskCommands: Record<
   string,
   string[]
@@ -174,9 +167,7 @@ const taskCommands: Record<
   ],
 };
 
-function getContainerName(
-  userId: string
-) {
+function getContainerName(userId: string) {
   const safeId = userId
     .replace(/[^a-zA-Z0-9]/g, "")
     .toLowerCase()
@@ -185,22 +176,15 @@ function getContainerName(
   return `ictnet101-lab-${safeId}`;
 }
 
-function getHistory(
-  userId: string
-) {
+function getHistory(userId: string) {
   if (!commandHistories.has(userId)) {
-    commandHistories.set(
-      userId,
-      []
-    );
+    commandHistories.set(userId, []);
   }
 
   return commandHistories.get(userId)!;
 }
 
-function normalizeCommand(
-  command: string
-) {
+function normalizeCommand(command: string) {
   return command
     .trim()
     .toLowerCase()
@@ -211,24 +195,21 @@ function isAcceptedCommand(
   userId: string,
   taskId: string
 ) {
-  const accepted =
-    taskCommands[taskId];
+  const accepted = taskCommands[taskId];
 
   if (!accepted) {
     return false;
   }
 
-  const history =
-    getHistory(userId);
+  const history = getHistory(userId);
 
   const normalizedHistory =
     history.map(normalizeCommand);
 
-  return accepted.some(
-    (expected) =>
-      normalizedHistory.includes(
-        normalizeCommand(expected)
-      )
+  return accepted.some((expected) =>
+    normalizedHistory.includes(
+      normalizeCommand(expected)
+    )
   );
 }
 
@@ -249,10 +230,8 @@ async function verifyAccessToken(
     {
       method: "GET",
       headers: {
-        apikey:
-          SUPABASE_PUBLISHABLE_KEY,
-        Authorization:
-          `Bearer ${accessToken}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
       },
     }
   );
@@ -263,10 +242,9 @@ async function verifyAccessToken(
     );
   }
 
-  const user =
-    (await response.json()) as {
-      id?: string;
-    };
+  const user = (await response.json()) as {
+    id?: string;
+  };
 
   if (!user.id) {
     throw new Error(
@@ -281,9 +259,7 @@ async function verifyAdminToken(
   accessToken: string
 ) {
   const userId =
-    await verifyAccessToken(
-      accessToken
-    );
+    await verifyAccessToken(accessToken);
 
   if (
     !SUPABASE_URL ||
@@ -301,10 +277,8 @@ async function verifyAdminToken(
     {
       method: "GET",
       headers: {
-        apikey:
-          SUPABASE_PUBLISHABLE_KEY,
-        Authorization:
-          `Bearer ${accessToken}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
       },
     }
   );
@@ -320,10 +294,7 @@ async function verifyAdminToken(
       role?: string;
     }[];
 
-  if (
-    profiles[0]?.role !==
-    "admin"
-  ) {
+  if (profiles[0]?.role !== "admin") {
     throw new Error(
       "Administrator access required."
     );
@@ -339,9 +310,7 @@ async function getOrCreateContainer(
     getContainerName(userId);
 
   const container =
-    docker.getContainer(
-      containerName
-    );
+    docker.getContainer(containerName);
 
   try {
     const info =
@@ -361,25 +330,17 @@ async function getOrCreateContainer(
       await docker.createContainer({
         name: containerName,
         Image: IMAGE_NAME,
-        Cmd: [
-          "/bin/bash",
-          "-i",
-        ],
+        Cmd: ["/bin/bash", "-i"],
         Tty: true,
         OpenStdin: true,
         StdinOnce: false,
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
-        WorkingDir:
-          "/home/student",
+        WorkingDir: "/home/student",
         HostConfig: {
-          Memory:
-            512 *
-            1024 *
-            1024,
-          NanoCpus:
-            500_000_000,
+          Memory: 512 * 1024 * 1024,
+          NanoCpus: 500_000_000,
           PidsLimit: 128,
           AutoRemove: false,
         },
@@ -407,10 +368,7 @@ async function getContainerIp(
   const firstNetwork =
     Object.values(networks)[0];
 
-  return (
-    firstNetwork?.IPAddress ??
-    null
-  );
+  return firstNetwork?.IPAddress ?? null;
 }
 
 function sendJson(
@@ -422,7 +380,7 @@ function sendJson(
     "Content-Type":
       "application/json",
     "Access-Control-Allow-Origin":
-      "http://localhost:3000",
+      "https://ictnet-101.vercel.app/",
     "Access-Control-Allow-Methods":
       "GET, OPTIONS",
     "Access-Control-Allow-Headers":
@@ -443,16 +401,12 @@ const httpServer =
       response
     ) => {
       try {
-        const url =
-          new URL(
-            request.url ?? "/",
-            `http://${request.headers.host ?? "localhost"}`
-          );
+        const url = new URL(
+          request.url ?? "/",
+          `http://${request.headers.host ?? "localhost"}`
+        );
 
-        if (
-          request.method ===
-          "OPTIONS"
-        ) {
+        if (request.method === "OPTIONS") {
           sendJson(
             response,
             200,
@@ -479,8 +433,7 @@ const httpServer =
 
         if (
           request.method === "GET" &&
-          url.pathname ===
-            "/lab-info"
+          url.pathname === "/lab-info"
         ) {
           const accessToken =
             url.searchParams.get(
@@ -528,7 +481,6 @@ const httpServer =
               ip,
             }
           );
-
           return;
         }
 
@@ -574,22 +526,16 @@ const httpServer =
                 "Assessment history reset.",
             }
           );
-
           return;
         }
 
-        /*
-         * Assessment checker
-         */
         if (
           request.method === "GET" &&
           url.pathname ===
             "/check-task"
         ) {
           const task =
-            url.searchParams.get(
-              "task"
-            );
+            url.searchParams.get("task");
 
           const accessToken =
             url.searchParams.get(
@@ -609,7 +555,6 @@ const httpServer =
                   "Unknown assessment task.",
               }
             );
-
             return;
           }
 
@@ -623,7 +568,6 @@ const httpServer =
                   "Authentication required.",
               }
             );
-
             return;
           }
 
@@ -651,7 +595,6 @@ const httpServer =
                   : "The required command has not been detected yet.",
             }
           );
-
           return;
         }
 
@@ -689,18 +632,12 @@ const httpServer =
             {
               userId,
               history:
-                getHistory(
-                  userId
-                ),
+                getHistory(userId),
             }
           );
-
           return;
         }
 
-        /*
-         * Admin-only Docker monitoring.
-         */
         if (
           request.method === "GET" &&
           url.pathname ===
@@ -730,11 +667,9 @@ const httpServer =
             );
 
             const containers =
-              await docker.listContainers(
-                {
-                  all: true,
-                }
-              );
+              await docker.listContainers({
+                all: true,
+              });
 
             const labContainers =
               containers.filter(
@@ -785,7 +720,8 @@ const httpServer =
                         await dockerContainer.inspect();
 
                       const networks =
-                        info.NetworkSettings
+                        info
+                          .NetworkSettings
                           ?.Networks;
 
                       if (networks) {
@@ -800,9 +736,7 @@ const httpServer =
                           null;
                       }
 
-                      if (
-                        info.Created
-                      ) {
+                      if (info.Created) {
                         created =
                           new Date(
                             info.Created
@@ -911,7 +845,6 @@ wss.on(
         socket.send(
           "\r\n\x1b[31mAuthentication required.\x1b[0m\r\n"
         );
-
         socket.close();
         return;
       }
@@ -958,16 +891,14 @@ wss.on(
       let currentCommand = "";
 
       stream.write(
-        "export PS1='student\\@ictnet101:\\w$ '\n"
+        "export PS1='student\\@ictnet101:\\w$ '\\n"
       );
 
       stream.write(
         "export TERM=xterm-256color\n"
       );
 
-      stream.write(
-        "clear\n"
-      );
+      stream.write("clear\n");
 
       stream.write(
         `echo "ICTNET101 Lab IP: ${
@@ -1041,7 +972,8 @@ wss.on(
               char >= " " &&
               char <= "~"
             ) {
-              currentCommand += char;
+              currentCommand +=
+                char;
             }
           }
 
@@ -1074,7 +1006,7 @@ wss.on(
         WebSocket.OPEN
       ) {
         socket.send(
-          "\r\n\x1b[31mFailed to start your networking lab.\x1b[0m\r\n"
+          "\r\n\x1b[31mFailed to start your networking lab.\\x1b[0m\r\n"
         );
 
         socket.close();
@@ -1085,21 +1017,14 @@ wss.on(
 
 httpServer.listen(
   PORT,
+  "0.0.0.0",
   () => {
     console.log(
-      `ICTNET101 lab server running on http://localhost:${PORT}`
+      `ICTNET101 lab server running on port ${PORT}`
     );
 
     console.log(
-      `Terminal: ws://localhost:${PORT}/terminal`
-    );
-
-    console.log(
-      "Assessment checker: http://localhost:3001/check-task"
-    );
-
-    console.log(
-      "Admin labs: http://localhost:3001/admin/labs"
+      `Terminal WebSocket available on port ${PORT}`
     );
   }
 );
