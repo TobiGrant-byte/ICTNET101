@@ -25,8 +25,9 @@ COPY . .
 RUN useradd \
       --create-home \
       --shell /bin/bash \
-      student && \
-    chown -R student:student /app /home/student
+      student
+
+RUN chown -R student:student /app /home/student
 
 USER student
 
