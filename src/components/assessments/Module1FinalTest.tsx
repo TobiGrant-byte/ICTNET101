@@ -21,6 +21,7 @@ import {
   shuffleWithCorrectAnswer,
 } from "@/lib/shuffle";
 import { createClient } from "@/lib/supabase/client";
+import { getLabServerUrl } from "@/lib/lab-server";
 
 type Question = {
   id: number;
@@ -524,7 +525,8 @@ export default function Module1FinalTest() {
         const {
           data: { user },
           error: userError,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
         if (userError) {
           throw userError;
@@ -532,7 +534,8 @@ export default function Module1FinalTest() {
 
         if (!user) {
           if (active) {
-            window.location.href = "/login";
+            window.location.href =
+              "/login";
           }
           return;
         }
@@ -540,16 +543,20 @@ export default function Module1FinalTest() {
         const {
           data: progressRows,
           error: progressError,
-        } = await supabase
-          .from("lesson_progress")
-          .select(
-            "lesson_slug, completed"
-          )
-          .eq("user_id", user.id)
-          .eq(
-            "module_slug",
-            MODULE_SLUG
-          );
+        } =
+          await supabase
+            .from("lesson_progress")
+            .select(
+              "lesson_slug, completed"
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .eq(
+              "module_slug",
+              MODULE_SLUG
+            );
 
         if (progressError) {
           throw progressError;
@@ -568,40 +575,35 @@ export default function Module1FinalTest() {
               )
           );
 
-        /*
-         * Some of the lesson pages use the
-         * short route slugs while the database
-         * stores the completion using the full
-         * lesson slugs.
-         *
-         * Accept both so the assessment
-         * doesn't incorrectly lock a completed
-         * module.
-         */
-        const alternativeLessonSlugs = [
+        const alternativeLessonSlugs =
           [
-            "introduction",
-            "introduction-to-networking",
-          ],
-          [
-            "osi",
-            "osi-model",
-          ],
-          [
-            "connectivity",
-            "basic-connectivity",
-          ],
-          [
-            "ports",
-            "network-ports",
-          ],
-        ];
+            [
+              "introduction",
+              "introduction-to-networking",
+            ],
+            [
+              "osi",
+              "osi-model",
+            ],
+            [
+              "connectivity",
+              "basic-connectivity",
+            ],
+            [
+              "ports",
+              "network-ports",
+            ],
+          ];
 
         const allComplete =
           alternativeLessonSlugs.every(
             ([shortSlug, databaseSlug]) =>
-              completed.has(shortSlug) ||
-              completed.has(databaseSlug)
+              completed.has(
+                shortSlug
+              ) ||
+              completed.has(
+                databaseSlug
+              )
           );
 
         if (!allComplete) {
@@ -612,6 +614,7 @@ export default function Module1FinalTest() {
             );
             setAccessChecked(true);
           }
+
           return;
         }
 
@@ -641,7 +644,9 @@ export default function Module1FinalTest() {
     };
   }, []);
 
-  const questions = attempt.questions;
+  const questions =
+    attempt.questions;
+
   const practicalTasks =
     attempt.practicalTasks;
 
@@ -657,13 +662,17 @@ export default function Module1FinalTest() {
     100;
 
   function chooseAnswer(index: number) {
-    if (selectedAnswer !== null) {
+    if (
+      selectedAnswer !== null
+    ) {
       return;
     }
 
     setSelectedAnswer(index);
 
-    if (index === question.answer) {
+    if (
+      index === question.answer
+    ) {
       setScore(
         (previous) =>
           previous + 1
@@ -680,6 +689,7 @@ export default function Module1FinalTest() {
         (previous) =>
           previous + 1
       );
+
       setSelectedAnswer(null);
       return;
     }
@@ -692,11 +702,13 @@ export default function Module1FinalTest() {
     setTaskMessage("");
 
     try {
-      const supabase = createClient();
+      const supabase =
+        createClient();
 
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } =
+        await supabase.auth.getSession();
 
       if (!session?.access_token) {
         throw new Error(
@@ -704,20 +716,24 @@ export default function Module1FinalTest() {
         );
       }
 
-      const response = await fetch(
-        `http://localhost:3001/check-task?task=${encodeURIComponent(
-          task.id
-        )}&access_token=${encodeURIComponent(
-          session.access_token
-        )}`,
-        {
-          cache: "no-store",
-        }
-      );
+      const labServerUrl =
+        getLabServerUrl();
+
+      const response =
+        await fetch(
+          `${labServerUrl}/check-task?task=${encodeURIComponent(
+            task.id
+          )}&access_token=${encodeURIComponent(
+            session.access_token
+          )}`,
+          {
+            cache: "no-store",
+          }
+        );
 
       if (!response.ok) {
         throw new Error(
-          "Assessment request failed"
+          `Assessment request failed: ${response.status}`
         );
       }
 
@@ -766,7 +782,8 @@ export default function Module1FinalTest() {
     setResultSaveError("");
 
     try {
-      const supabase = createClient();
+      const supabase =
+        createClient();
 
       const {
         data: { user },
@@ -806,9 +823,7 @@ export default function Module1FinalTest() {
         error: saveError,
       } =
         await supabase
-          .from(
-            "assessment_results"
-          )
+          .from("assessment_results")
           .insert({
             user_id: user.id,
             assessment_name:
@@ -863,6 +878,7 @@ export default function Module1FinalTest() {
         (previous) =>
           previous + 1
       );
+
       setTaskMessage("");
       return;
     }
@@ -1037,7 +1053,8 @@ export default function Module1FinalTest() {
             </p>
 
             <p className="mt-3 text-lg text-[var(--muted-foreground)]">
-              {totalScore} / {totalPossible} points
+              {totalScore} /{" "}
+              {totalPossible} points
             </p>
 
             <div className="mx-auto mt-8 grid max-w-2xl gap-4 sm:grid-cols-2">
@@ -1050,7 +1067,9 @@ export default function Module1FinalTest() {
               <ScoreCard
                 title="Practical Assessment"
                 score={practicalScore}
-                total={practicalTasks.length}
+                total={
+                  practicalTasks.length
+                }
               />
             </div>
 
@@ -1156,7 +1175,8 @@ export default function Module1FinalTest() {
 
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               {completedTasks.length}/
-              {practicalTasks.length} tasks complete
+              {practicalTasks.length}{" "}
+              tasks complete
             </p>
           </div>
         </div>
@@ -1165,7 +1185,8 @@ export default function Module1FinalTest() {
           <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-7 sm:p-10">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold">
-                Question {currentQuestion + 1} of{" "}
+                Question{" "}
+                {currentQuestion + 1} of{" "}
                 {questions.length}
               </span>
 
@@ -1201,21 +1222,26 @@ export default function Module1FinalTest() {
               {question.options.map(
                 (option, index) => {
                   const selected =
-                    selectedAnswer === index;
+                    selectedAnswer ===
+                    index;
 
                   const correct =
-                    index === question.answer;
+                    index ===
+                    question.answer;
 
                   let optionClass =
                     "border-[var(--border)] hover:border-[var(--primary)]";
 
                   if (
-                    selectedAnswer !== null
+                    selectedAnswer !==
+                    null
                   ) {
                     if (correct) {
                       optionClass =
                         "border-green-500 bg-green-500/10";
-                    } else if (selected) {
+                    } else if (
+                      selected
+                    ) {
                       optionClass =
                         "border-red-500 bg-red-500/10";
                     }
@@ -1226,17 +1252,21 @@ export default function Module1FinalTest() {
                       key={`${question.id}-${option}`}
                       type="button"
                       onClick={() =>
-                        chooseAnswer(index)
+                        chooseAnswer(
+                          index
+                        )
                       }
                       className={`flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition ${optionClass}`}
                     >
-                      {selectedAnswer !== null &&
+                      {selectedAnswer !==
+                        null &&
                       correct ? (
                         <CheckCircle2
                           size={21}
                           className="shrink-0 text-green-500"
                         />
-                      ) : selectedAnswer !== null &&
+                      ) : selectedAnswer !==
+                          null &&
                         selected ? (
                         <XCircle
                           size={21}
@@ -1258,10 +1288,12 @@ export default function Module1FinalTest() {
               )}
             </div>
 
-            {selectedAnswer !== null && (
+            {selectedAnswer !==
+              null && (
               <div className="mt-6 rounded-2xl bg-[var(--muted)] p-5">
                 <p className="text-sm font-bold">
-                  {selectedAnswer === question.answer
+                  {selectedAnswer ===
+                  question.answer
                     ? "Correct"
                     : "Review this answer"}
                 </p>
@@ -1273,15 +1305,20 @@ export default function Module1FinalTest() {
                 <div className="mt-6 flex justify-end">
                   <button
                     type="button"
-                    onClick={nextQuestion}
+                    onClick={
+                      nextQuestion
+                    }
                     className="inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-3 font-semibold text-[var(--primary-foreground)] transition hover:opacity-90"
                   >
                     {currentQuestion ===
-                    questions.length - 1
+                    questions.length -
+                      1
                       ? "Start Practical Assessment"
                       : "Next Question"}
 
-                    <ArrowRight size={18} />
+                    <ArrowRight
+                      size={18}
+                    />
                   </button>
                 </div>
               </div>
@@ -1310,7 +1347,9 @@ export default function Module1FinalTest() {
               </div>
 
               <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">
-                Complete each task using the real Linux networking terminal. Read the instruction carefully and use what you learned in the lessons.
+                Complete each task using the real Linux networking terminal.
+                Read the instruction carefully and use what you learned in
+                the lessons.
               </p>
             </section>
 
@@ -1397,7 +1436,9 @@ export default function Module1FinalTest() {
                   disabled={checkingTask}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 py-3 font-bold text-[var(--primary-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <CheckCircle2 size={18} />
+                  <CheckCircle2
+                    size={18}
+                  />
 
                   {checkingTask
                     ? "Checking..."
@@ -1410,17 +1451,22 @@ export default function Module1FinalTest() {
                   <button
                     type="button"
                     onClick={nextTask}
-                    disabled={savingResult}
+                    disabled={
+                      savingResult
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-6 py-3 font-bold transition hover:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {taskIndex ===
-                    practicalTasks.length - 1
+                    practicalTasks.length -
+                      1
                       ? savingResult
                         ? "Saving Result..."
                         : "View Final Results"
                       : "Next Task"}
 
-                    <ArrowRight size={18} />
+                    <ArrowRight
+                      size={18}
+                    />
                   </button>
                 )}
               </div>
@@ -1436,7 +1482,9 @@ export default function Module1FinalTest() {
                 onClick={leaveTest}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--primary)]"
               >
-                <ArrowLeft size={17} />
+                <ArrowLeft
+                  size={17}
+                />
                 Back to Modules
               </Link>
             </div>

@@ -4,7 +4,7 @@ export const LAB_SERVER_URL =
     ""
   ) || "";
 
-export function getLabServerUrl() {
+export function getLabServerUrl(): string {
   if (!LAB_SERVER_URL) {
     throw new Error(
       "NEXT_PUBLIC_LAB_SERVER_URL is not configured."
@@ -14,10 +14,8 @@ export function getLabServerUrl() {
   return LAB_SERVER_URL;
 }
 
-export function getLabWebSocketUrl() {
-  const url = getLabServerUrl();
-
-  return url
+export function getLabWebSocketUrl(): string {
+  return getLabServerUrl()
     .replace(/^https:\/\//, "wss://")
     .replace(/^http:\/\//, "ws://");
 }

@@ -41,6 +41,7 @@ const taskCommands: Record<
   /*
    * MODULE 1
    */
+
   "ip-config": [
     "ip a",
     "ip addr",
@@ -86,6 +87,7 @@ const taskCommands: Record<
   /*
    * MODULE 2
    */
+
   "routing-table": [
     "ip route",
     "ip route show",
@@ -124,6 +126,7 @@ const taskCommands: Record<
   /*
    * MODULE 3
    */
+
   "arp-table-module3": [
     "arp -a",
     "ip neigh",
@@ -243,6 +246,7 @@ async function verifyAccessToken(
     await fetch(
       `${SUPABASE_URL}/auth/v1/user`,
       {
+        method: "GET",
         headers: {
           apikey:
             SUPABASE_PUBLISHABLE_KEY,
@@ -280,15 +284,25 @@ async function verifyAdminToken(
       accessToken
     );
 
+  if (
+    !SUPABASE_URL ||
+    !SUPABASE_PUBLISHABLE_KEY
+  ) {
+    throw new Error(
+      "Supabase environment variables are missing."
+    );
+  }
+
   const response =
     await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(
         userId
       )}&select=role`,
       {
+        method: "GET",
         headers: {
           apikey:
-            SUPABASE_PUBLISHABLE_KEY!,
+            SUPABASE_PUBLISHABLE_KEY,
           Authorization:
             `Bearer ${accessToken}`,
         },
@@ -307,7 +321,8 @@ async function verifyAdminToken(
     }[];
 
   if (
-    profiles[0]?.role !== "admin"
+    profiles[0]?.role !==
+    "admin"
   ) {
     throw new Error(
       "Administrator access required."
@@ -320,11 +335,13 @@ async function verifyAdminToken(
 async function getOrCreateContainer(
   userId: string
 ): Promise<Docker.Container> {
-  const name =
+  const containerName =
     getContainerName(userId);
 
   const container =
-    docker.getContainer(name);
+    docker.getContainer(
+      containerName
+    );
 
   try {
     const info =
@@ -336,9 +353,13 @@ async function getOrCreateContainer(
 
     return container;
   } catch {
+    console.log(
+      `Creating lab container for ${userId}: ${containerName}`
+    );
+
     const created =
       await docker.createContainer({
-        name,
+        name: containerName,
         Image: IMAGE_NAME,
         Cmd: [
           "/bin/bash",
@@ -714,44 +735,97 @@ const httpServer =
                 all: true,
               });
 
+            const labContainers =
+              containers.filter(
+                (container) =>
+                  container.Names.some(
+                    (name) =>
+                      name.includes(
+                        "ictnet101-lab-"
+                      )
+                  )
+              );
+
             const labs =
-              containers
-                .filter(
-                  (container) =>
-                    container.Names.some(
-                      (name) =>
-                        name.includes(
-                          "ictnet101-lab-"
-                        )
-                    )
-                )
-                .map(
-                  (container) => ({
-                    id:
-                      container.Id,
-                    name:
+              await Promise.all(
+                labContainers.map(
+                  async (
+                    container
+                  ) => {
+                    const name =
                       container.Names.find(
-                        (name) =>
-                          name.includes(
+                        (item) =>
+                          item.includes(
                             "ictnet101-lab-"
                           )
                       )?.replace(
                         "/",
                         ""
                       ) ??
-                      container.Id.slice(
+                      `ictnet101-lab-${container.Id.slice(
                         0,
                         12
-                      ),
-                    status:
-                      container.State,
-                    running:
-                      container.State ===
-                      "running",
-                    created:
-                      container.Created,
-                  })
-                );
+                      )}`;
+
+                    const dockerContainer =
+                      docker.getContainer(
+                        container.Id
+                      );
+
+                    let ip:
+                      | string
+                      | null = null;
+
+                    let created =
+                      container.Created;
+
+                    try {
+                      const info =
+                        await dockerContainer.inspect();
+
+                      const networks =
+                        info
+                          .NetworkSettings
+                          ?.Networks;
+
+                      if (networks) {
+                        const firstNetwork =
+                          Object.values(
+                            networks
+                          )[0];
+
+                        ip =
+                          firstNetwork
+                            ?.IPAddress ??
+                          null;
+                      }
+
+                      if (
+                        info.Created
+                      ) {
+                        created =
+                          new Date(
+                            info.Created
+                          ).getTime();
+                      }
+                    } catch {
+                      ip = null;
+                    }
+
+                    return {
+                      id: container.Id,
+                      name,
+                      status:
+                        container.State,
+                      running:
+                        container.State ===
+                        "running",
+                      ip,
+                      created,
+                    };
+                  }
+                )
+              );
 
             sendJson(
               response,
@@ -761,7 +835,12 @@ const httpServer =
                 labs,
               }
             );
-          } catch {
+          } catch (error) {
+            console.error(
+              "Admin labs error:",
+              error
+            );
+
             sendJson(
               response,
               403,
@@ -832,7 +911,9 @@ wss.on(
         socket.send(
           "\r\n\x1b[31mAuthentication required.\x1b[0m\r\n"
         );
+
         socket.close();
+
         return;
       }
 
@@ -875,17 +956,20 @@ wss.on(
           Tty: true,
         });
 
-      let currentCommand = "";
+      let currentCommand =
+        "";
 
       stream.write(
-        "export PS1='student\\@ictnet101:\\w$ '\\n"
+        "export PS1='student\\@ictnet101:\\w$ '\n"
       );
 
       stream.write(
         "export TERM=xterm-256color\n"
       );
 
-      stream.write("clear\n");
+      stream.write(
+        "clear\n"
+      );
 
       stream.write(
         `echo "ICTNET101 Lab IP: ${
@@ -896,7 +980,9 @@ wss.on(
 
       stream.on(
         "data",
-        (chunk: Buffer) => {
+        (
+          chunk: Buffer
+        ) => {
           if (
             socket.readyState ===
             WebSocket.OPEN
@@ -937,6 +1023,7 @@ wss.on(
               }
 
               currentCommand = "";
+
               continue;
             }
 
@@ -948,6 +1035,7 @@ wss.on(
                   0,
                   -1
                 );
+
               continue;
             }
 
@@ -997,6 +1085,7 @@ wss.on(
         socket.send(
           "\r\n\x1b[31mFailed to start your networking lab.\x1b[0m\r\n"
         );
+
         socket.close();
       }
     }
@@ -1010,8 +1099,13 @@ httpServer.listen(
     console.log(
       `ICTNET101 lab server running on port ${PORT}`
     );
+
     console.log(
-      "Terminal WebSocket available at /terminal"
+      `Terminal: ws://0.0.0.0:${PORT}/terminal`
+    );
+
+    console.log(
+      "Assessment checker: /check-task"
     );
   }
 );

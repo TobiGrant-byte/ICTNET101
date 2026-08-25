@@ -21,6 +21,7 @@ import {
   shuffleWithCorrectAnswer,
 } from "@/lib/shuffle";
 import { createClient } from "@/lib/supabase/client";
+import { getLabServerUrl } from "@/lib/lab-server";
 
 type Question = {
   id: number;
@@ -504,21 +505,22 @@ const basePracticalTasks: PracticalTask[] = [
 ];
 
 function createNewAttempt(): AssessmentAttempt {
-  const shuffledQuestions = shuffleArray(
-    baseQuestions
-  ).map((question) => {
-    const shuffled =
-      shuffleWithCorrectAnswer(
-        question.options,
-        question.answer
-      );
+  const shuffledQuestions =
+    shuffleArray(baseQuestions).map(
+      (question) => {
+        const shuffled =
+          shuffleWithCorrectAnswer(
+            question.options,
+            question.answer
+          );
 
-    return {
-      ...question,
-      options: shuffled.options,
-      answer: shuffled.answer,
-    };
-  });
+        return {
+          ...question,
+          options: shuffled.options,
+          answer: shuffled.answer,
+        };
+      }
+    );
 
   return {
     questions: shuffledQuestions,
@@ -528,7 +530,10 @@ function createNewAttempt(): AssessmentAttempt {
 }
 
 function loadAssessmentAttempt(): AssessmentAttempt {
-  if (typeof window === "undefined") {
+  if (
+    typeof window ===
+    "undefined"
+  ) {
     return createNewAttempt();
   }
 
@@ -563,8 +568,10 @@ function loadAssessmentAttempt(): AssessmentAttempt {
 export default function Module3FinalTest() {
   const [accessChecked, setAccessChecked] =
     useState(false);
+
   const [lessonsCompleted, setLessonsCompleted] =
     useState(false);
+
   const [accessError, setAccessError] =
     useState("");
 
@@ -580,25 +587,33 @@ export default function Module3FinalTest() {
 
   const [currentQuestion, setCurrentQuestion] =
     useState(0);
+
   const [selectedAnswer, setSelectedAnswer] =
-    useState<number | null>(null);
+    useState<number | null>(
+      null
+    );
+
   const [score, setScore] =
     useState(0);
 
   const [taskIndex, setTaskIndex] =
     useState(0);
+
   const [completedTasks, setCompletedTasks] =
     useState<string[]>([]);
 
   const [checkingTask, setCheckingTask] =
     useState(false);
+
   const [taskMessage, setTaskMessage] =
     useState("");
 
   const [savingResult, setSavingResult] =
     useState(false);
+
   const [resultSaved, setResultSaved] =
     useState(false);
+
   const [resultSaveError, setResultSaveError] =
     useState("");
 
@@ -607,12 +622,14 @@ export default function Module3FinalTest() {
 
     async function checkAssessmentAccess() {
       try {
-        const supabase = createClient();
+        const supabase =
+          createClient();
 
         const {
           data: { user },
           error: userError,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
         if (userError) {
           throw userError;
@@ -623,25 +640,27 @@ export default function Module3FinalTest() {
             window.location.href =
               "/login";
           }
+
           return;
         }
 
         const {
           data: progressRows,
           error: progressError,
-        } = await supabase
-          .from("lesson_progress")
-          .select(
-            "lesson_slug, completed"
-          )
-          .eq(
-            "user_id",
-            user.id
-          )
-          .eq(
-            "module_slug",
-            MODULE_SLUG
-          );
+        } =
+          await supabase
+            .from("lesson_progress")
+            .select(
+              "lesson_slug, completed"
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .eq(
+              "module_slug",
+              MODULE_SLUG
+            );
 
         if (progressError) {
           throw progressError;
@@ -670,18 +689,30 @@ export default function Module3FinalTest() {
 
         if (!allComplete) {
           if (active) {
-            setLessonsCompleted(false);
+            setLessonsCompleted(
+              false
+            );
+
             setAccessError(
               "Complete all nine Module 3 lessons before taking the final assessment."
             );
-            setAccessChecked(true);
+
+            setAccessChecked(
+              true
+            );
           }
+
           return;
         }
 
         if (active) {
-          setLessonsCompleted(true);
-          setAccessChecked(true);
+          setLessonsCompleted(
+            true
+          );
+
+          setAccessChecked(
+            true
+          );
         }
       } catch (error) {
         console.error(
@@ -693,7 +724,10 @@ export default function Module3FinalTest() {
           setAccessError(
             "We could not verify your Module 3 lesson progress."
           );
-          setAccessChecked(true);
+
+          setAccessChecked(
+            true
+          );
         }
       }
     }
@@ -722,14 +756,21 @@ export default function Module3FinalTest() {
       questions.length) *
     100;
 
-  function chooseAnswer(index: number) {
-    if (selectedAnswer !== null) {
+  function chooseAnswer(
+    index: number
+  ) {
+    if (
+      selectedAnswer !== null
+    ) {
       return;
     }
 
     setSelectedAnswer(index);
 
-    if (index === question.answer) {
+    if (
+      index ===
+      question.answer
+    ) {
       setScore(
         (previous) =>
           previous + 1
@@ -746,7 +787,11 @@ export default function Module3FinalTest() {
         (previous) =>
           previous + 1
       );
-      setSelectedAnswer(null);
+
+      setSelectedAnswer(
+        null
+      );
+
       return;
     }
 
@@ -766,15 +811,20 @@ export default function Module3FinalTest() {
       } =
         await supabase.auth.getSession();
 
-      if (!session?.access_token) {
+      if (
+        !session?.access_token
+      ) {
         throw new Error(
           "You must be signed in."
         );
       }
 
+      const labServerUrl =
+        getLabServerUrl();
+
       const response =
         await fetch(
-          `http://localhost:3001/check-task?task=${encodeURIComponent(
+          `${labServerUrl}/check-task?task=${encodeURIComponent(
             task.id
           )}&access_token=${encodeURIComponent(
             session.access_token
@@ -786,7 +836,7 @@ export default function Module3FinalTest() {
 
       if (!response.ok) {
         throw new Error(
-          "Assessment request failed"
+          `Assessment request failed: ${response.status}`
         );
       }
 
@@ -797,12 +847,15 @@ export default function Module3FinalTest() {
         setTaskMessage(
           "The task has not been completed yet. Review the instruction and try again."
         );
+
         return;
       }
 
       setCompletedTasks(
         (previous) =>
-          previous.includes(task.id)
+          previous.includes(
+            task.id
+          )
             ? previous
             : [
                 ...previous,
@@ -820,7 +873,9 @@ export default function Module3FinalTest() {
         "The assessment server could not be reached or your session could not be verified."
       );
     } finally {
-      setCheckingTask(false);
+      setCheckingTask(
+        false
+      );
     }
   }
 
@@ -907,6 +962,7 @@ export default function Module3FinalTest() {
       }
 
       setResultSaved(true);
+
       return true;
     } catch (error) {
       console.error(
@@ -920,7 +976,9 @@ export default function Module3FinalTest() {
 
       return false;
     } finally {
-      setSavingResult(false);
+      setSavingResult(
+        false
+      );
     }
   }
 
@@ -933,7 +991,9 @@ export default function Module3FinalTest() {
         (previous) =>
           previous + 1
       );
+
       setTaskMessage("");
+
       return;
     }
 
@@ -943,7 +1003,9 @@ export default function Module3FinalTest() {
       );
 
     if (saved) {
-      setSection("results");
+      setSection(
+        "results"
+      );
     }
   }
 
@@ -957,22 +1019,46 @@ export default function Module3FinalTest() {
     ) {
       window.sessionStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify(newAttempt)
+        JSON.stringify(
+          newAttempt
+        )
       );
     }
 
-    setAttempt(newAttempt);
-    setSection("knowledge");
-    setCurrentQuestion(0);
-    setSelectedAnswer(null);
+    setAttempt(
+      newAttempt
+    );
+
+    setSection(
+      "knowledge"
+    );
+
+    setCurrentQuestion(
+      0
+    );
+
+    setSelectedAnswer(
+      null
+    );
+
     setScore(0);
     setTaskIndex(0);
-    setCompletedTasks([]);
-    setCheckingTask(false);
+    setCompletedTasks(
+      []
+    );
+    setCheckingTask(
+      false
+    );
     setTaskMessage("");
-    setSavingResult(false);
-    setResultSaved(false);
-    setResultSaveError("");
+    setSavingResult(
+      false
+    );
+    setResultSaved(
+      false
+    );
+    setResultSaveError(
+      ""
+    );
   }
 
   function leaveTest() {
@@ -1114,13 +1200,19 @@ export default function Module3FinalTest() {
               <ScoreCard
                 title="Knowledge Test"
                 score={score}
-                total={questions.length}
+                total={
+                  questions.length
+                }
               />
 
               <ScoreCard
                 title="Practical Assessment"
-                score={practicalScore}
-                total={practicalTasks.length}
+                score={
+                  practicalScore
+                }
+                total={
+                  practicalTasks.length
+                }
               />
             </div>
 
@@ -1139,8 +1231,12 @@ export default function Module3FinalTest() {
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <button
                 type="button"
-                onClick={restartTest}
-                disabled={savingResult}
+                onClick={
+                  restartTest
+                }
+                disabled={
+                  savingResult
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 font-semibold transition hover:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RotateCcw size={17} />
@@ -1149,7 +1245,9 @@ export default function Module3FinalTest() {
 
               <Link
                 href={`/modules/${MODULE_SLUG}`}
-                onClick={leaveTest}
+                onClick={
+                  leaveTest
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-3 font-semibold text-[var(--primary-foreground)] transition hover:opacity-90"
               >
                 Back to Module
@@ -1160,7 +1258,9 @@ export default function Module3FinalTest() {
 
               <Link
                 href="/dashboard"
-                onClick={leaveTest}
+                onClick={
+                  leaveTest
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 font-semibold transition hover:border-[var(--primary)]"
               >
                 Dashboard
@@ -1207,7 +1307,9 @@ export default function Module3FinalTest() {
             </p>
 
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-              {score}/{questions.length} correct so far
+              {score}/
+              {questions.length}{" "}
+              correct so far
             </p>
           </div>
 
@@ -1228,16 +1330,20 @@ export default function Module3FinalTest() {
 
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               {completedTasks.length}/
-              {practicalTasks.length} tasks complete
+              {practicalTasks.length}{" "}
+              tasks complete
             </p>
           </div>
         </div>
 
-        {section === "knowledge" && (
+        {section ===
+          "knowledge" && (
           <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-7 sm:p-10">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold">
-                Question {currentQuestion + 1} of{" "}
+                Question{" "}
+                {currentQuestion + 1}{" "}
+                of{" "}
                 {questions.length}
               </span>
 
@@ -1271,12 +1377,17 @@ export default function Module3FinalTest() {
 
             <div className="mt-7 space-y-3">
               {question.options.map(
-                (option, index) => {
+                (
+                  option,
+                  index
+                ) => {
                   const selected =
-                    selectedAnswer === index;
+                    selectedAnswer ===
+                    index;
 
                   const correct =
-                    index === question.answer;
+                    index ===
+                    question.answer;
 
                   let optionClass =
                     "border-[var(--border)] hover:border-[var(--primary)]";
@@ -1337,7 +1448,8 @@ export default function Module3FinalTest() {
               )}
             </div>
 
-            {selectedAnswer !== null && (
+            {selectedAnswer !==
+              null && (
               <div className="mt-6 rounded-2xl bg-[var(--muted)] p-5">
                 <p className="text-sm font-bold">
                   {selectedAnswer ===
@@ -1359,7 +1471,8 @@ export default function Module3FinalTest() {
                     className="inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-3 font-semibold text-[var(--primary-foreground)] transition hover:opacity-90"
                   >
                     {currentQuestion ===
-                    questions.length - 1
+                    questions.length -
+                      1
                       ? "Start Practical Assessment"
                       : "Next Question"}
 
@@ -1373,7 +1486,8 @@ export default function Module3FinalTest() {
           </section>
         )}
 
-        {section === "practical" && (
+        {section ===
+          "practical" && (
           <>
             <section className="mt-8 rounded-3xl border border-[var(--primary)] bg-[var(--card)] p-7 sm:p-10">
               <div className="flex items-center gap-3">
@@ -1410,7 +1524,9 @@ export default function Module3FinalTest() {
                   </p>
 
                   <h2 className="mt-1 text-xl font-bold">
-                    Task {taskIndex + 1} of{" "}
+                    Task{" "}
+                    {taskIndex + 1}{" "}
+                    of{" "}
                     {practicalTasks.length}
                   </h2>
                 </div>
@@ -1477,8 +1593,12 @@ export default function Module3FinalTest() {
               <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={checkTask}
-                  disabled={checkingTask}
+                  onClick={
+                    checkTask
+                  }
+                  disabled={
+                    checkingTask
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 py-3 font-bold text-[var(--primary-foreground)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <CheckCircle2
@@ -1495,12 +1615,17 @@ export default function Module3FinalTest() {
                 ) && (
                   <button
                     type="button"
-                    onClick={nextTask}
-                    disabled={savingResult}
+                    onClick={
+                      nextTask
+                    }
+                    disabled={
+                      savingResult
+                    }
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-6 py-3 font-bold transition hover:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {taskIndex ===
-                    practicalTasks.length - 1
+                    practicalTasks.length -
+                      1
                       ? savingResult
                         ? "Saving Result..."
                         : "View Final Results"
@@ -1521,10 +1646,14 @@ export default function Module3FinalTest() {
             <div className="mt-8">
               <Link
                 href="/modules"
-                onClick={leaveTest}
+                onClick={
+                  leaveTest
+                }
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--primary)]"
               >
-                <ArrowLeft size={17} />
+                <ArrowLeft
+                  size={17}
+                />
                 Back to Modules
               </Link>
             </div>

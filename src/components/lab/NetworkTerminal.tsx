@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-
 import { createClient } from "@/lib/supabase/client";
+import { getLabWebSocketUrl } from "@/lib/lab-server";
 
 export default function NetworkTerminal() {
   const terminalContainerRef =
-    useRef<HTMLDivElement | null>(
-      null
-    );
+    useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let terminal:
@@ -30,9 +28,7 @@ export default function NetworkTerminal() {
     let destroyed = false;
 
     async function setup() {
-      if (
-        !terminalContainerRef.current
-      ) {
+      if (!terminalContainerRef.current) {
         return;
       }
 
@@ -48,37 +44,30 @@ export default function NetworkTerminal() {
         return;
       }
 
-      await import(
-        "xterm/css/xterm.css"
-      );
+      await import("xterm/css/xterm.css");
 
       if (destroyed) {
         return;
       }
 
-      terminal =
-        new Terminal({
-          cursorBlink: true,
-          convertEol: true,
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-          fontSize: 14,
-          scrollback: 5000,
-          theme: {
-            background: "#050505",
-            foreground: "#f5f5f5",
-            cursor: "#ffffff",
-            selectionBackground:
-              "#333333",
-          },
-        });
+      terminal = new Terminal({
+        cursorBlink: true,
+        convertEol: true,
+        fontFamily:
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        fontSize: 14,
+        scrollback: 5000,
+        theme: {
+          background: "#050505",
+          foreground: "#f5f5f5",
+          cursor: "#ffffff",
+          selectionBackground: "#333333",
+        },
+      });
 
-      const fitAddon =
-        new FitAddon();
+      const fitAddon = new FitAddon();
 
-      terminal.loadAddon(
-        fitAddon
-      );
+      terminal.loadAddon(fitAddon);
 
       terminal.open(
         terminalContainerRef.current
@@ -94,8 +83,7 @@ export default function NetworkTerminal() {
         "\x1b[90mChecking your authentication session...\x1b[0m\r\n\r\n"
       );
 
-      const supabase =
-        createClient();
+      const supabase = createClient();
 
       const {
         data: { session },
@@ -106,9 +94,7 @@ export default function NetworkTerminal() {
         return;
       }
 
-      if (
-        !session?.access_token
-      ) {
+      if (!session?.access_token) {
         terminal.write(
           "\x1b[1;31mYour authentication session could not be loaded.\x1b[0m\r\n"
         );
@@ -116,22 +102,29 @@ export default function NetworkTerminal() {
         return;
       }
 
-      const protocol =
-        window.location.protocol ===
-        "https:"
-          ? "wss:"
-          : "ws:";
+      let websocketUrl: string;
 
-      const hostname =
-        window.location.hostname ||
-        "localhost";
-
-      socket =
-        new WebSocket(
-          `${protocol}//${hostname}:3001/terminal?access_token=${encodeURIComponent(
-            session.access_token
-          )}`
+      try {
+        websocketUrl =
+          getLabWebSocketUrl();
+      } catch (error) {
+        console.error(
+          "Lab WebSocket URL error:",
+          error
         );
+
+        terminal.write(
+          "\x1b[1;31mThe production lab server is not configured.\x1b[0m\r\n"
+        );
+
+        return;
+      }
+
+      socket = new WebSocket(
+        `${websocketUrl}/terminal?access_token=${encodeURIComponent(
+          session.access_token
+        )}`
+      );
 
       socket.onopen = () => {
         terminal?.write(
@@ -142,12 +135,19 @@ export default function NetworkTerminal() {
       socket.onmessage = (
         event
       ) => {
-        terminal?.write(
-          String(event.data)
-        );
+        if (terminal) {
+          terminal.write(
+            String(event.data)
+          );
+        }
       };
 
-      socket.onerror = () => {
+      socket.onerror = (event) => {
+        console.error(
+          "Network terminal WebSocket error:",
+          event
+        );
+
         terminal?.write(
           "\r\n\x1b[1;31mTerminal connection error.\x1b[0m\r\n"
         );
@@ -160,19 +160,21 @@ export default function NetworkTerminal() {
       };
 
       disposable =
-        terminal.onData(
-          (data) => {
-            if (
-              socket?.readyState ===
-              WebSocket.OPEN
-            ) {
-              socket.send(data);
-            }
+        terminal.onData((data) => {
+          if (
+            socket?.readyState ===
+            WebSocket.OPEN
+          ) {
+            socket.send(data);
           }
-        );
+        });
 
       resizeHandler = () => {
-        fitAddon.fit();
+        try {
+          fitAddon.fit();
+        } catch {
+          // Terminal may already be disposed.
+        }
       };
 
       window.addEventListener(
@@ -194,7 +196,11 @@ export default function NetworkTerminal() {
       }
 
       disposable?.dispose();
-      socket?.close();
+
+      if (socket) {
+        socket.close();
+      }
+
       terminal?.dispose();
     };
   }, []);

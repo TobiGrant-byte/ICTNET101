@@ -21,6 +21,7 @@ import {
   shuffleWithCorrectAnswer,
 } from "@/lib/shuffle";
 import { createClient } from "@/lib/supabase/client";
+import { getLabServerUrl } from "@/lib/lab-server";
 
 type Question = {
   id: number;
@@ -163,7 +164,6 @@ const baseQuestions: Question[] = [
     explanation:
       "The Linux command `ip route` can display the current routing table.",
   },
-
   {
     id: 8,
     lesson: "Wi-Fi",
@@ -254,7 +254,6 @@ const baseQuestions: Question[] = [
     explanation:
       "An access point provides Wi-Fi connectivity to devices.",
   },
-
   {
     id: 14,
     lesson: "DHCP",
@@ -330,7 +329,6 @@ const baseQuestions: Question[] = [
     explanation:
       "A DHCP reservation allows a specific device to consistently receive a chosen IP address.",
   },
-
   {
     id: 19,
     lesson: "DNS",
@@ -607,7 +605,8 @@ export default function Module2FinalTest() {
         const {
           data: { user },
           error: userError,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
         if (userError) {
           throw userError;
@@ -624,19 +623,20 @@ export default function Module2FinalTest() {
         const {
           data: progressRows,
           error: progressError,
-        } = await supabase
-          .from("lesson_progress")
-          .select(
-            "lesson_slug, completed"
-          )
-          .eq(
-            "user_id",
-            user.id
-          )
-          .eq(
-            "module_slug",
-            MODULE_SLUG
-          );
+        } =
+          await supabase
+            .from("lesson_progress")
+            .select(
+              "lesson_slug, completed"
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .eq(
+              "module_slug",
+              MODULE_SLUG
+            );
 
         if (progressError) {
           throw progressError;
@@ -665,21 +665,30 @@ export default function Module2FinalTest() {
 
         if (!allComplete) {
           if (active) {
-            setLessonsCompleted(false);
+            setLessonsCompleted(
+              false
+            );
 
             setAccessError(
               "Complete all four Module 2 lessons before taking the final assessment."
             );
 
-            setAccessChecked(true);
+            setAccessChecked(
+              true
+            );
           }
 
           return;
         }
 
         if (active) {
-          setLessonsCompleted(true);
-          setAccessChecked(true);
+          setLessonsCompleted(
+            true
+          );
+
+          setAccessChecked(
+            true
+          );
         }
       } catch (error) {
         console.error(
@@ -692,7 +701,9 @@ export default function Module2FinalTest() {
             "We could not verify your Module 2 lesson progress."
           );
 
-          setAccessChecked(true);
+          setAccessChecked(
+            true
+          );
         }
       }
     }
@@ -721,7 +732,9 @@ export default function Module2FinalTest() {
       questions.length) *
     100;
 
-  function chooseAnswer(index: number) {
+  function chooseAnswer(
+    index: number
+  ) {
     if (
       selectedAnswer !== null
     ) {
@@ -731,7 +744,8 @@ export default function Module2FinalTest() {
     setSelectedAnswer(index);
 
     if (
-      index === question.answer
+      index ===
+      question.answer
     ) {
       setScore(
         (previous) =>
@@ -750,7 +764,9 @@ export default function Module2FinalTest() {
           previous + 1
       );
 
-      setSelectedAnswer(null);
+      setSelectedAnswer(
+        null
+      );
 
       return;
     }
@@ -779,9 +795,12 @@ export default function Module2FinalTest() {
         );
       }
 
+      const labServerUrl =
+        getLabServerUrl();
+
       const response =
         await fetch(
-          `http://localhost:3001/check-task?task=${encodeURIComponent(
+          `${labServerUrl}/check-task?task=${encodeURIComponent(
             task.id
           )}&access_token=${encodeURIComponent(
             session.access_token
@@ -793,7 +812,7 @@ export default function Module2FinalTest() {
 
       if (!response.ok) {
         throw new Error(
-          "Assessment request failed"
+          `Assessment request failed: ${response.status}`
         );
       }
 
@@ -810,7 +829,9 @@ export default function Module2FinalTest() {
 
       setCompletedTasks(
         (previous) =>
-          previous.includes(task.id)
+          previous.includes(
+            task.id
+          )
             ? previous
             : [
                 ...previous,
@@ -882,42 +903,43 @@ export default function Module2FinalTest() {
 
       const {
         error: saveError,
-      } = await supabase
-        .from(
-          "assessment_results"
-        )
-        .insert({
-          user_id: user.id,
+      } =
+        await supabase
+          .from(
+            "assessment_results"
+          )
+          .insert({
+            user_id: user.id,
 
-          assessment_name:
-            "Module 2 Final Assessment",
+            assessment_name:
+              "Module 2 Final Assessment",
 
-          module_slug:
-            MODULE_SLUG,
+            module_slug:
+              MODULE_SLUG,
 
-          knowledge_score:
-            score,
+            knowledge_score:
+              score,
 
-          knowledge_total:
-            questions.length,
+            knowledge_total:
+              questions.length,
 
-          practical_score:
-            finalPracticalScore,
+            practical_score:
+              finalPracticalScore,
 
-          practical_total:
-            practicalTasks.length,
+            practical_total:
+              practicalTasks.length,
 
-          total_score:
-            finalTotalScore,
+            total_score:
+              finalTotalScore,
 
-          total_possible:
-            finalTotalPossible,
+            total_possible:
+              finalTotalPossible,
 
-          percentage:
-            finalPercentage,
+            percentage:
+              finalPercentage,
 
-          passed,
-        });
+            passed,
+          });
 
       if (saveError) {
         throw saveError;
@@ -986,8 +1008,14 @@ export default function Module2FinalTest() {
       );
     }
 
-    setAttempt(newAttempt);
-    setSection("knowledge");
+    setAttempt(
+      newAttempt
+    );
+
+    setSection(
+      "knowledge"
+    );
+
     setCurrentQuestion(0);
     setSelectedAnswer(null);
     setScore(0);
@@ -1082,7 +1110,8 @@ export default function Module2FinalTest() {
       completedTasks.length;
 
     const totalScore =
-      score + practicalScore;
+      score +
+      practicalScore;
 
     const totalPossible =
       questions.length +
@@ -1142,7 +1171,9 @@ export default function Module2FinalTest() {
               <ScoreCard
                 title="Practical Assessment"
                 score={practicalScore}
-                total={practicalTasks.length}
+                total={
+                  practicalTasks.length
+                }
               />
             </div>
 
@@ -1205,7 +1236,6 @@ export default function Module2FinalTest() {
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
-
         <header>
           <div className="flex items-center gap-3 text-sm font-semibold text-[var(--primary)]">
             <Network size={19} />
@@ -1259,7 +1289,8 @@ export default function Module2FinalTest() {
 
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               {completedTasks.length}/
-              {practicalTasks.length} tasks complete
+              {practicalTasks.length}{" "}
+              tasks complete
             </p>
           </div>
         </div>
@@ -1268,7 +1299,8 @@ export default function Module2FinalTest() {
           <section className="mt-8 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-7 sm:p-10">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold">
-                Question {currentQuestion + 1} of{" "}
+                Question{" "}
+                {currentQuestion + 1} of{" "}
                 {questions.length}
               </span>
 
@@ -1429,7 +1461,8 @@ export default function Module2FinalTest() {
 
               <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">
                 Complete each task using the real Linux networking terminal.
-                Read the instruction carefully and use what you learned in Module 2.
+                Read the instruction carefully and use what you learned in
+                Module 2.
               </p>
             </section>
 
@@ -1543,7 +1576,8 @@ export default function Module2FinalTest() {
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] px-6 py-3 font-bold transition hover:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {taskIndex ===
-                    practicalTasks.length - 1
+                    practicalTasks.length -
+                      1
                       ? savingResult
                         ? "Saving Result..."
                         : "View Final Results"
