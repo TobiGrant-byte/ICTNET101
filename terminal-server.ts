@@ -27,8 +27,7 @@ const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 const SUPABASE_PUBLISHABLE_KEY =
-  process.env
-    .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 const commandHistories = new Map<
   string,
@@ -123,6 +122,8 @@ const taskCommands: Record<
     "ip addr show",
     "ip route show",
     "ifconfig",
+    "ipconfig",
+    "ipconfig /all",
   ],
 
   "wifi-info": [
@@ -178,6 +179,8 @@ const taskCommands: Record<
     "ip addr show",
     "ip route show",
     "ifconfig",
+    "ipconfig",
+    "ipconfig /all",
   ],
 };
 
@@ -354,9 +357,24 @@ function resolveCommand(
   const command =
     normalizeCommand(input);
 
+  /*
+   * Network configuration aliases
+   *
+   * Linux:
+   *   ip a
+   *
+   * Compatibility aliases:
+   *   ip addr
+   *   ifconfig
+   *   ipconfig
+   *   ipconfig /all
+   */
   if (
     command === "ip a" ||
-    command === "ip addr"
+    command === "ip addr" ||
+    command === "ifconfig" ||
+    command === "ipconfig" ||
+    command === "ipconfig /all"
   ) {
     return {
       command: "ip",
@@ -407,17 +425,10 @@ function resolveCommand(
     };
   }
 
-  if (command === "ifconfig") {
-    return {
-      command: "ifconfig",
-      args: [],
-    };
-  }
-
   if (command === "arp -a") {
     return {
-      command: "arp",
-      args: ["-a"],
+      command: "ip",
+      args: ["neigh"],
     };
   }
 
@@ -449,9 +460,14 @@ function resolveCommand(
     };
   }
 
+  /*
+   * netstat may not exist on minimal
+   * Linux images, so use ss as a
+   * compatible replacement.
+   */
   if (command === "netstat") {
     return {
-      command: "netstat",
+      command: "ss",
       args: [],
     };
   }
@@ -461,7 +477,7 @@ function resolveCommand(
     "netstat -tuln"
   ) {
     return {
-      command: "netstat",
+      command: "ss",
       args: ["-tuln"],
     };
   }
@@ -471,7 +487,7 @@ function resolveCommand(
     "netstat -an"
   ) {
     return {
-      command: "netstat",
+      command: "ss",
       args: ["-an"],
     };
   }
@@ -481,7 +497,7 @@ function resolveCommand(
     "netstat -tulpn"
   ) {
     return {
-      command: "netstat",
+      command: "ss",
       args: ["-tulpn"],
     };
   }
@@ -643,41 +659,29 @@ function resolveCommand(
     };
   }
 
+  /*
+   * curl aliases
+   */
   if (
     command ===
-    "curl -i http://example.com"
-  ) {
-    return {
-      command: "curl",
-      args: [
-        "-I",
-        "http://example.com",
-      ],
-    };
-  }
-
-  if (
+    "curl -i http://example.com" ||
     command ===
-    "curl -i https://example.com"
-  ) {
-    return {
-      command: "curl",
-      args: [
-        "-I",
-        "https://example.com",
-      ],
-    };
-  }
-
-  if (
+    "curl -i https://example.com" ||
     command ===
     "curl -i example.com"
   ) {
+    const url =
+      command.includes(
+        "https://example.com"
+      )
+        ? "https://example.com"
+        : "http://example.com";
+
     return {
       command: "curl",
       args: [
         "-I",
-        "http://example.com",
+        url,
       ],
     };
   }
@@ -705,8 +709,8 @@ function resolveCommand(
 
   if (command === "iwconfig") {
     return {
-      command: "iwconfig",
-      args: [],
+      command: "iw",
+      args: ["dev"],
     };
   }
 
@@ -715,8 +719,10 @@ function resolveCommand(
     "iwconfig wlan0"
   ) {
     return {
-      command: "iwconfig",
-      args: ["wlan0"],
+      command: "iw",
+      args: [
+        "dev",
+      ],
     };
   }
 
@@ -793,6 +799,7 @@ async function executeCommand(
     socket.send(
       "\x1b[2J\x1b[H"
     );
+
     writePrompt(socket);
     return;
   }
@@ -804,10 +811,15 @@ async function executeCommand(
         "",
         "  ip a",
         "  ip addr",
+        "  ip addr show",
+        "  ifconfig",
+        "  ipconfig",
+        "  ipconfig /all",
         "  ip route",
         "  ip route show",
         "  ip route show default",
         "  ip neigh",
+        "  ip neighbor",
         "  arp -a",
         "  ping 127.0.0.1",
         "  ping -c 1 127.0.0.1",
@@ -818,11 +830,14 @@ async function executeCommand(
         "  nslookup example.com",
         "  dig example.com",
         "  dig example.com A",
+        "  dig example.com A +short",
         "  curl -I http://example.com",
+        "  ss",
         "  ss -tuln",
+        "  netstat",
         "  netstat -tuln",
         "  iw dev",
-        "  ifconfig",
+        "  iwconfig",
         "  hostname",
         "  whoami",
         "  pwd",
@@ -857,7 +872,7 @@ async function executeCommand(
     );
 
     socket.send(
-      "\x1b[90mType 'help' to see available commands.\x1b[0m\r\n"
+      "\x1b[90mType 'help' to see available networking commands.\x1b[0m\r\n"
     );
 
     writePrompt(socket);
@@ -1095,6 +1110,7 @@ const httpServer =
                   "Authentication required.",
               }
             );
+
             return;
           }
 
@@ -1139,6 +1155,7 @@ const httpServer =
                   "Authentication required.",
               }
             );
+
             return;
           }
 
