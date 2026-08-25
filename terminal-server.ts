@@ -11,7 +11,12 @@ import {
   WebSocket,
 } from "ws";
 
-const PORT = Number(process.env.PORT) || 3001;
+const PORT =
+  Number(process.env.PORT) || 3001;
+
+const FRONTEND_ORIGIN =
+  process.env.FRONTEND_ORIGIN ||
+  "http://localhost:3000";
 
 const docker = new Docker();
 
@@ -36,7 +41,6 @@ const taskCommands: Record<
   /*
    * MODULE 1
    */
-
   "ip-config": [
     "ip a",
     "ip addr",
@@ -82,7 +86,6 @@ const taskCommands: Record<
   /*
    * MODULE 2
    */
-
   "routing-table": [
     "ip route",
     "ip route show",
@@ -121,7 +124,6 @@ const taskCommands: Record<
   /*
    * MODULE 3
    */
-
   "arp-table-module3": [
     "arp -a",
     "ip neigh",
@@ -167,7 +169,9 @@ const taskCommands: Record<
   ],
 };
 
-function getContainerName(userId: string) {
+function getContainerName(
+  userId: string
+) {
   const safeId = userId
     .replace(/[^a-zA-Z0-9]/g, "")
     .toLowerCase()
@@ -176,15 +180,22 @@ function getContainerName(userId: string) {
   return `ictnet101-lab-${safeId}`;
 }
 
-function getHistory(userId: string) {
+function getHistory(
+  userId: string
+) {
   if (!commandHistories.has(userId)) {
-    commandHistories.set(userId, []);
+    commandHistories.set(
+      userId,
+      []
+    );
   }
 
   return commandHistories.get(userId)!;
 }
 
-function normalizeCommand(command: string) {
+function normalizeCommand(
+  command: string
+) {
   return command
     .trim()
     .toLowerCase()
@@ -195,21 +206,24 @@ function isAcceptedCommand(
   userId: string,
   taskId: string
 ) {
-  const accepted = taskCommands[taskId];
+  const accepted =
+    taskCommands[taskId];
 
   if (!accepted) {
     return false;
   }
 
-  const history = getHistory(userId);
+  const history =
+    getHistory(userId);
 
   const normalizedHistory =
     history.map(normalizeCommand);
 
-  return accepted.some((expected) =>
-    normalizedHistory.includes(
-      normalizeCommand(expected)
-    )
+  return accepted.some(
+    (expected) =>
+      normalizedHistory.includes(
+        normalizeCommand(expected)
+      )
   );
 }
 
@@ -225,16 +239,18 @@ async function verifyAccessToken(
     );
   }
 
-  const response = await fetch(
-    `${SUPABASE_URL}/auth/v1/user`,
-    {
-      method: "GET",
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
+  const response =
+    await fetch(
+      `${SUPABASE_URL}/auth/v1/user`,
+      {
+        headers: {
+          apikey:
+            SUPABASE_PUBLISHABLE_KEY,
+          Authorization:
+            `Bearer ${accessToken}`,
+        },
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
@@ -242,9 +258,10 @@ async function verifyAccessToken(
     );
   }
 
-  const user = (await response.json()) as {
-    id?: string;
-  };
+  const user =
+    (await response.json()) as {
+      id?: string;
+    };
 
   if (!user.id) {
     throw new Error(
@@ -259,29 +276,24 @@ async function verifyAdminToken(
   accessToken: string
 ) {
   const userId =
-    await verifyAccessToken(accessToken);
-
-  if (
-    !SUPABASE_URL ||
-    !SUPABASE_PUBLISHABLE_KEY
-  ) {
-    throw new Error(
-      "Supabase environment variables are missing."
+    await verifyAccessToken(
+      accessToken
     );
-  }
 
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(
-      userId
-    )}&select=role`,
-    {
-      method: "GET",
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
+  const response =
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(
+        userId
+      )}&select=role`,
+      {
+        headers: {
+          apikey:
+            SUPABASE_PUBLISHABLE_KEY!,
+          Authorization:
+            `Bearer ${accessToken}`,
+        },
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
@@ -294,7 +306,9 @@ async function verifyAdminToken(
       role?: string;
     }[];
 
-  if (profiles[0]?.role !== "admin") {
+  if (
+    profiles[0]?.role !== "admin"
+  ) {
     throw new Error(
       "Administrator access required."
     );
@@ -306,11 +320,11 @@ async function verifyAdminToken(
 async function getOrCreateContainer(
   userId: string
 ): Promise<Docker.Container> {
-  const containerName =
+  const name =
     getContainerName(userId);
 
   const container =
-    docker.getContainer(containerName);
+    docker.getContainer(name);
 
   try {
     const info =
@@ -322,25 +336,29 @@ async function getOrCreateContainer(
 
     return container;
   } catch {
-    console.log(
-      `Creating lab container for ${userId}: ${containerName}`
-    );
-
     const created =
       await docker.createContainer({
-        name: containerName,
+        name,
         Image: IMAGE_NAME,
-        Cmd: ["/bin/bash", "-i"],
+        Cmd: [
+          "/bin/bash",
+          "-i",
+        ],
         Tty: true,
         OpenStdin: true,
         StdinOnce: false,
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
-        WorkingDir: "/home/student",
+        WorkingDir:
+          "/home/student",
         HostConfig: {
-          Memory: 512 * 1024 * 1024,
-          NanoCpus: 500_000_000,
+          Memory:
+            512 *
+            1024 *
+            1024,
+          NanoCpus:
+            500_000_000,
           PidsLimit: 128,
           AutoRemove: false,
         },
@@ -368,7 +386,10 @@ async function getContainerIp(
   const firstNetwork =
     Object.values(networks)[0];
 
-  return firstNetwork?.IPAddress ?? null;
+  return (
+    firstNetwork?.IPAddress ??
+    null
+  );
 }
 
 function sendJson(
@@ -380,7 +401,7 @@ function sendJson(
     "Content-Type":
       "application/json",
     "Access-Control-Allow-Origin":
-      "https://ictnet-101.vercel.app/",
+      FRONTEND_ORIGIN,
     "Access-Control-Allow-Methods":
       "GET, OPTIONS",
     "Access-Control-Allow-Headers":
@@ -401,12 +422,16 @@ const httpServer =
       response
     ) => {
       try {
-        const url = new URL(
-          request.url ?? "/",
-          `http://${request.headers.host ?? "localhost"}`
-        );
+        const url =
+          new URL(
+            request.url ?? "/",
+            `http://${request.headers.host ?? "localhost"}`
+          );
 
-        if (request.method === "OPTIONS") {
+        if (
+          request.method ===
+          "OPTIONS"
+        ) {
           sendJson(
             response,
             200,
@@ -416,8 +441,10 @@ const httpServer =
         }
 
         if (
-          request.method === "GET" &&
-          url.pathname === "/health"
+          request.method ===
+            "GET" &&
+          url.pathname ===
+            "/health"
         ) {
           sendJson(
             response,
@@ -432,8 +459,10 @@ const httpServer =
         }
 
         if (
-          request.method === "GET" &&
-          url.pathname === "/lab-info"
+          request.method ===
+            "GET" &&
+          url.pathname ===
+            "/lab-info"
         ) {
           const accessToken =
             url.searchParams.get(
@@ -481,11 +510,13 @@ const httpServer =
               ip,
             }
           );
+
           return;
         }
 
         if (
-          request.method === "GET" &&
+          request.method ===
+            "GET" &&
           url.pathname ===
             "/reset-assessment"
         ) {
@@ -526,16 +557,20 @@ const httpServer =
                 "Assessment history reset.",
             }
           );
+
           return;
         }
 
         if (
-          request.method === "GET" &&
+          request.method ===
+            "GET" &&
           url.pathname ===
             "/check-task"
         ) {
           const task =
-            url.searchParams.get("task");
+            url.searchParams.get(
+              "task"
+            );
 
           const accessToken =
             url.searchParams.get(
@@ -555,6 +590,7 @@ const httpServer =
                   "Unknown assessment task.",
               }
             );
+
             return;
           }
 
@@ -568,6 +604,7 @@ const httpServer =
                   "Authentication required.",
               }
             );
+
             return;
           }
 
@@ -595,11 +632,13 @@ const httpServer =
                   : "The required command has not been detected yet.",
             }
           );
+
           return;
         }
 
         if (
-          request.method === "GET" &&
+          request.method ===
+            "GET" &&
           url.pathname ===
             "/debug/history"
         ) {
@@ -632,14 +671,18 @@ const httpServer =
             {
               userId,
               history:
-                getHistory(userId),
+                getHistory(
+                  userId
+                ),
             }
           );
+
           return;
         }
 
         if (
-          request.method === "GET" &&
+          request.method ===
+            "GET" &&
           url.pathname ===
             "/admin/labs"
         ) {
@@ -671,95 +714,44 @@ const httpServer =
                 all: true,
               });
 
-            const labContainers =
-              containers.filter(
-                (container) =>
-                  container.Names.some(
-                    (name) =>
-                      name.includes(
-                        "ictnet101-lab-"
-                      )
-                  )
-              );
-
             const labs =
-              await Promise.all(
-                labContainers.map(
-                  async (
-                    container
-                  ) => {
-                    const name =
+              containers
+                .filter(
+                  (container) =>
+                    container.Names.some(
+                      (name) =>
+                        name.includes(
+                          "ictnet101-lab-"
+                        )
+                    )
+                )
+                .map(
+                  (container) => ({
+                    id:
+                      container.Id,
+                    name:
                       container.Names.find(
-                        (item) =>
-                          item.includes(
+                        (name) =>
+                          name.includes(
                             "ictnet101-lab-"
                           )
                       )?.replace(
                         "/",
                         ""
                       ) ??
-                      `ictnet101-lab-${container.Id.slice(
+                      container.Id.slice(
                         0,
                         12
-                      )}`;
-
-                    const dockerContainer =
-                      docker.getContainer(
-                        container.Id
-                      );
-
-                    let ip:
-                      | string
-                      | null = null;
-
-                    let created =
-                      container.Created;
-
-                    try {
-                      const info =
-                        await dockerContainer.inspect();
-
-                      const networks =
-                        info
-                          .NetworkSettings
-                          ?.Networks;
-
-                      if (networks) {
-                        const firstNetwork =
-                          Object.values(
-                            networks
-                          )[0];
-
-                        ip =
-                          firstNetwork
-                            ?.IPAddress ??
-                          null;
-                      }
-
-                      if (info.Created) {
-                        created =
-                          new Date(
-                            info.Created
-                          ).getTime();
-                      }
-                    } catch {
-                      ip = null;
-                    }
-
-                    return {
-                      id: container.Id,
-                      name,
-                      status:
-                        container.State,
-                      running:
-                        container.State ===
-                        "running",
-                      ip,
-                      created,
-                    };
-                  }
-                )
-              );
+                      ),
+                    status:
+                      container.State,
+                    running:
+                      container.State ===
+                      "running",
+                    created:
+                      container.Created,
+                  })
+                );
 
             sendJson(
               response,
@@ -769,12 +761,7 @@ const httpServer =
                 labs,
               }
             );
-          } catch (error) {
-            console.error(
-              "Admin labs error:",
-              error
-            );
-
+          } catch {
             sendJson(
               response,
               403,
@@ -915,7 +902,9 @@ wss.on(
             WebSocket.OPEN
           ) {
             socket.send(
-              chunk.toString("utf8")
+              chunk.toString(
+                "utf8"
+              )
             );
           }
         }
@@ -1006,9 +995,8 @@ wss.on(
         WebSocket.OPEN
       ) {
         socket.send(
-          "\r\n\x1b[31mFailed to start your networking lab.\\x1b[0m\r\n"
+          "\r\n\x1b[31mFailed to start your networking lab.\x1b[0m\r\n"
         );
-
         socket.close();
       }
     }
@@ -1022,9 +1010,8 @@ httpServer.listen(
     console.log(
       `ICTNET101 lab server running on port ${PORT}`
     );
-
     console.log(
-      `Terminal WebSocket available on port ${PORT}`
+      "Terminal WebSocket available at /terminal"
     );
   }
 );
