@@ -5,7 +5,12 @@ dotenv.config({
 });
 
 import http from "http";
-import Docker from "dockerode";
+import os from "os";
+import {
+  spawn,
+  type ChildProcessByStdio,
+} from "child_process";
+import type { Readable } from "stream";
 import {
   WebSocketServer,
   WebSocket,
@@ -18,20 +23,24 @@ const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN ||
   "http://localhost:3000";
 
-const docker = new Docker();
-
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 const SUPABASE_PUBLISHABLE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-const IMAGE_NAME =
-  "ictnet101-networking-lab";
+  process.env
+    .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 const commandHistories = new Map<
   string,
   string[]
+>();
+
+const activeSessions = new Map<
+  string,
+  {
+    connectedAt: number;
+    lastActivity: number;
+  }
 >();
 
 const taskCommands: Record<
@@ -172,33 +181,15 @@ const taskCommands: Record<
   ],
 };
 
-function getContainerName(
-  userId: string
-) {
-  const safeId = userId
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toLowerCase()
-    .slice(0, 20);
-
-  return `ictnet101-lab-${safeId}`;
-}
-
-function getHistory(
-  userId: string
-) {
+function getHistory(userId: string) {
   if (!commandHistories.has(userId)) {
-    commandHistories.set(
-      userId,
-      []
-    );
+    commandHistories.set(userId, []);
   }
 
   return commandHistories.get(userId)!;
 }
 
-function normalizeCommand(
-  command: string
-) {
+function normalizeCommand(command: string) {
   return command
     .trim()
     .toLowerCase()
@@ -209,15 +200,13 @@ function isAcceptedCommand(
   userId: string,
   taskId: string
 ) {
-  const accepted =
-    taskCommands[taskId];
+  const accepted = taskCommands[taskId];
 
   if (!accepted) {
     return false;
   }
 
-  const history =
-    getHistory(userId);
+  const history = getHistory(userId);
 
   const normalizedHistory =
     history.map(normalizeCommand);
@@ -242,19 +231,18 @@ async function verifyAccessToken(
     );
   }
 
-  const response =
-    await fetch(
-      `${SUPABASE_URL}/auth/v1/user`,
-      {
-        method: "GET",
-        headers: {
-          apikey:
-            SUPABASE_PUBLISHABLE_KEY,
-          Authorization:
-            `Bearer ${accessToken}`,
-        },
-      }
-    );
+  const response = await fetch(
+    `${SUPABASE_URL}/auth/v1/user`,
+    {
+      method: "GET",
+      headers: {
+        apikey:
+          SUPABASE_PUBLISHABLE_KEY,
+        Authorization:
+          `Bearer ${accessToken}`,
+      },
+    }
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -293,21 +281,20 @@ async function verifyAdminToken(
     );
   }
 
-  const response =
-    await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(
-        userId
-      )}&select=role`,
-      {
-        method: "GET",
-        headers: {
-          apikey:
-            SUPABASE_PUBLISHABLE_KEY,
-          Authorization:
-            `Bearer ${accessToken}`,
-        },
-      }
-    );
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(
+      userId
+    )}&select=role`,
+    {
+      method: "GET",
+      headers: {
+        apikey:
+          SUPABASE_PUBLISHABLE_KEY,
+        Authorization:
+          `Bearer ${accessToken}`,
+      },
+    }
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -332,84 +319,692 @@ async function verifyAdminToken(
   return userId;
 }
 
-async function getOrCreateContainer(
-  userId: string
-): Promise<Docker.Container> {
-  const containerName =
-    getContainerName(userId);
+function getLocalIp() {
+  const interfaces =
+    os.networkInterfaces();
 
-  const container =
-    docker.getContainer(
-      containerName
-    );
-
-  try {
-    const info =
-      await container.inspect();
-
-    if (!info.State.Running) {
-      await container.start();
+  for (const entries of Object.values(
+    interfaces
+  )) {
+    if (!entries) {
+      continue;
     }
 
-    return container;
-  } catch {
-    console.log(
-      `Creating lab container for ${userId}: ${containerName}`
+    for (const entry of entries) {
+      if (
+        entry.family === "IPv4" &&
+        !entry.internal
+      ) {
+        return entry.address;
+      }
+    }
+  }
+
+  return null;
+}
+
+type ResolvedCommand = {
+  command: string;
+  args: string[];
+};
+
+function resolveCommand(
+  input: string
+): ResolvedCommand | null {
+  const command =
+    normalizeCommand(input);
+
+  if (
+    command === "ip a" ||
+    command === "ip addr"
+  ) {
+    return {
+      command: "ip",
+      args: ["a"],
+    };
+  }
+
+  if (
+    command === "ip addr show"
+  ) {
+    return {
+      command: "ip",
+      args: ["addr", "show"],
+    };
+  }
+
+  if (
+    command === "ip route" ||
+    command === "ip route show"
+  ) {
+    return {
+      command: "ip",
+      args: ["route"],
+    };
+  }
+
+  if (
+    command ===
+    "ip route show default"
+  ) {
+    return {
+      command: "ip",
+      args: [
+        "route",
+        "show",
+        "default",
+      ],
+    };
+  }
+
+  if (
+    command === "ip neigh" ||
+    command === "ip neighbor"
+  ) {
+    return {
+      command: "ip",
+      args: ["neigh"],
+    };
+  }
+
+  if (command === "ifconfig") {
+    return {
+      command: "ifconfig",
+      args: [],
+    };
+  }
+
+  if (command === "arp -a") {
+    return {
+      command: "arp",
+      args: ["-a"],
+    };
+  }
+
+  if (command === "ss") {
+    return {
+      command: "ss",
+      args: [],
+    };
+  }
+
+  if (command === "ss -tuln") {
+    return {
+      command: "ss",
+      args: ["-tuln"],
+    };
+  }
+
+  if (command === "ss -tulpn") {
+    return {
+      command: "ss",
+      args: ["-tulpn"],
+    };
+  }
+
+  if (command === "ss -an") {
+    return {
+      command: "ss",
+      args: ["-an"],
+    };
+  }
+
+  if (command === "netstat") {
+    return {
+      command: "netstat",
+      args: [],
+    };
+  }
+
+  if (
+    command ===
+    "netstat -tuln"
+  ) {
+    return {
+      command: "netstat",
+      args: ["-tuln"],
+    };
+  }
+
+  if (
+    command ===
+    "netstat -an"
+  ) {
+    return {
+      command: "netstat",
+      args: ["-an"],
+    };
+  }
+
+  if (
+    command ===
+    "netstat -tulpn"
+  ) {
+    return {
+      command: "netstat",
+      args: ["-tulpn"],
+    };
+  }
+
+  if (
+    command ===
+    "traceroute example.com"
+  ) {
+    return {
+      command: "traceroute",
+      args: [
+        "-m",
+        "8",
+        "example.com",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "traceroute google.com"
+  ) {
+    return {
+      command: "traceroute",
+      args: [
+        "-m",
+        "8",
+        "google.com",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "traceroute 8.8.8.8"
+  ) {
+    return {
+      command: "traceroute",
+      args: [
+        "-m",
+        "8",
+        "8.8.8.8",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "ping 127.0.0.1"
+  ) {
+    return {
+      command: "ping",
+      args: [
+        "-c",
+        "3",
+        "127.0.0.1",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "ping -c 1 127.0.0.1"
+  ) {
+    return {
+      command: "ping",
+      args: [
+        "-c",
+        "1",
+        "127.0.0.1",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "ping -c 3 127.0.0.1"
+  ) {
+    return {
+      command: "ping",
+      args: [
+        "-c",
+        "3",
+        "127.0.0.1",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "nslookup example.com"
+  ) {
+    return {
+      command: "nslookup",
+      args: ["example.com"],
+    };
+  }
+
+  if (
+    command ===
+    "dig example.com"
+  ) {
+    return {
+      command: "dig",
+      args: ["example.com"],
+    };
+  }
+
+  if (
+    command ===
+    "dig example.com a"
+  ) {
+    return {
+      command: "dig",
+      args: [
+        "example.com",
+        "A",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "dig example.com a +short"
+  ) {
+    return {
+      command: "dig",
+      args: [
+        "example.com",
+        "A",
+        "+short",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "nslookup -type=a example.com"
+  ) {
+    return {
+      command: "nslookup",
+      args: [
+        "-type=A",
+        "example.com",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "nslookup -query=a example.com"
+  ) {
+    return {
+      command: "nslookup",
+      args: [
+        "-query=A",
+        "example.com",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "curl -i http://example.com"
+  ) {
+    return {
+      command: "curl",
+      args: [
+        "-I",
+        "http://example.com",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "curl -i https://example.com"
+  ) {
+    return {
+      command: "curl",
+      args: [
+        "-I",
+        "https://example.com",
+      ],
+    };
+  }
+
+  if (
+    command ===
+    "curl -i example.com"
+  ) {
+    return {
+      command: "curl",
+      args: [
+        "-I",
+        "http://example.com",
+      ],
+    };
+  }
+
+  if (command === "iw dev") {
+    return {
+      command: "iw",
+      args: ["dev"],
+    };
+  }
+
+  if (
+    command ===
+    "iw dev wlan0 info"
+  ) {
+    return {
+      command: "iw",
+      args: [
+        "dev",
+        "wlan0",
+        "info",
+      ],
+    };
+  }
+
+  if (command === "iwconfig") {
+    return {
+      command: "iwconfig",
+      args: [],
+    };
+  }
+
+  if (
+    command ===
+    "iwconfig wlan0"
+  ) {
+    return {
+      command: "iwconfig",
+      args: ["wlan0"],
+    };
+  }
+
+  if (command === "hostname") {
+    return {
+      command: "hostname",
+      args: [],
+    };
+  }
+
+  if (command === "whoami") {
+    return {
+      command: "whoami",
+      args: [],
+    };
+  }
+
+  if (command === "pwd") {
+    return {
+      command: "pwd",
+      args: [],
+    };
+  }
+
+  return null;
+}
+
+function writePrompt(
+  socket: WebSocket
+) {
+  if (
+    socket.readyState ===
+    WebSocket.OPEN
+  ) {
+    socket.send(
+      "\x1b[1;36mstudent@ictnet101\x1b[0m:\x1b[1;34m~\x1b[0m$ "
     );
-
-    const created =
-      await docker.createContainer({
-        name: containerName,
-        Image: IMAGE_NAME,
-        Cmd: [
-          "/bin/bash",
-          "-i",
-        ],
-        Tty: true,
-        OpenStdin: true,
-        StdinOnce: false,
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-        WorkingDir:
-          "/home/student",
-        HostConfig: {
-          Memory:
-            512 *
-            1024 *
-            1024,
-          NanoCpus:
-            500_000_000,
-          PidsLimit: 128,
-          AutoRemove: false,
-        },
-      });
-
-    await created.start();
-
-    return created;
   }
 }
 
-async function getContainerIp(
-  container: Docker.Container
+async function executeCommand(
+  socket: WebSocket,
+  userId: string,
+  rawCommand: string
 ) {
-  const info =
-    await container.inspect();
+  const command =
+    normalizeCommand(rawCommand);
 
-  const networks =
-    info.NetworkSettings?.Networks;
-
-  if (!networks) {
-    return null;
+  if (!command) {
+    socket.send("\r\n");
+    writePrompt(socket);
+    return;
   }
 
-  const firstNetwork =
-    Object.values(networks)[0];
+  getHistory(userId).push(
+    rawCommand.trim()
+  );
 
-  return (
-    firstNetwork?.IPAddress ??
-    null
+  activeSessions.set(
+    userId,
+    {
+      ...(activeSessions.get(
+        userId
+      ) ?? {
+        connectedAt:
+          Date.now(),
+      }),
+      lastActivity:
+        Date.now(),
+    }
+  );
+
+  if (command === "clear") {
+    socket.send(
+      "\x1b[2J\x1b[H"
+    );
+    writePrompt(socket);
+    return;
+  }
+
+  if (command === "help") {
+    socket.send(
+      [
+        "\r\nAvailable ICTNET101 commands:",
+        "",
+        "  ip a",
+        "  ip addr",
+        "  ip route",
+        "  ip route show",
+        "  ip route show default",
+        "  ip neigh",
+        "  arp -a",
+        "  ping 127.0.0.1",
+        "  ping -c 1 127.0.0.1",
+        "  ping -c 3 127.0.0.1",
+        "  traceroute example.com",
+        "  traceroute google.com",
+        "  traceroute 8.8.8.8",
+        "  nslookup example.com",
+        "  dig example.com",
+        "  dig example.com A",
+        "  curl -I http://example.com",
+        "  ss -tuln",
+        "  netstat -tuln",
+        "  iw dev",
+        "  ifconfig",
+        "  hostname",
+        "  whoami",
+        "  pwd",
+        "  clear",
+        "  help",
+        "",
+      ].join("\r\n")
+    );
+
+    writePrompt(socket);
+    return;
+  }
+
+  if (
+    command === "exit" ||
+    command === "quit"
+  ) {
+    socket.send(
+      "\r\n\x1b[1;33mSession closed.\x1b[0m\r\n"
+    );
+
+    socket.close();
+    return;
+  }
+
+  const resolved =
+    resolveCommand(command);
+
+  if (!resolved) {
+    socket.send(
+      "\r\n\x1b[1;31mCommand not available in the ICTNET101 lab.\x1b[0m\r\n"
+    );
+
+    socket.send(
+      "\x1b[90mType 'help' to see available commands.\x1b[0m\r\n"
+    );
+
+    writePrompt(socket);
+    return;
+  }
+
+  socket.send("\r\n");
+
+  let child:
+    | ChildProcessByStdio<
+        null,
+        Readable,
+        Readable
+      >
+    | null = null;
+
+  try {
+    const spawnEnvironment:
+      NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH:
+        process.env.PATH ??
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      HOME:
+        process.env.HOME ??
+        "/home/student",
+      TERM:
+        "xterm-256color",
+      LANG:
+        "C.UTF-8",
+      LC_ALL:
+        "C.UTF-8",
+      NODE_ENV:
+        process.env.NODE_ENV ??
+        "production",
+    };
+
+    child =
+      spawn(
+        resolved.command,
+        resolved.args,
+        {
+          cwd: "/home/student",
+          env: spawnEnvironment,
+          stdio: [
+            "ignore",
+            "pipe",
+            "pipe",
+          ],
+        }
+      );
+  } catch (error) {
+    console.error(
+      "Command spawn error:",
+      error
+    );
+
+    socket.send(
+      `\r\n\x1b[1;31mUnable to start command: ${
+        error instanceof Error
+          ? error.message
+          : "Unknown error"
+      }\x1b[0m\r\n`
+    );
+
+    writePrompt(socket);
+    return;
+  }
+
+  child.stdout.on(
+    "data",
+    (data: Buffer) => {
+      if (
+        socket.readyState ===
+        WebSocket.OPEN
+      ) {
+        socket.send(
+          data
+            .toString()
+            .replace(
+              /\n/g,
+              "\r\n"
+            )
+        );
+      }
+    }
+  );
+
+  child.stderr.on(
+    "data",
+    (data: Buffer) => {
+      if (
+        socket.readyState ===
+        WebSocket.OPEN
+      ) {
+        socket.send(
+          data
+            .toString()
+            .replace(
+              /\n/g,
+              "\r\n"
+            )
+        );
+      }
+    }
+  );
+
+  child.on(
+    "error",
+    (error: Error) => {
+      console.error(
+        "Command execution error:",
+        error
+      );
+
+      if (
+        socket.readyState ===
+        WebSocket.OPEN
+      ) {
+        socket.send(
+          `\r\n\x1b[1;31mUnable to execute command: ${error.message}\x1b[0m\r\n`
+        );
+
+        writePrompt(socket);
+      }
+    }
+  );
+
+  child.on(
+    "close",
+    (code: number | null) => {
+      if (
+        socket.readyState ===
+        WebSocket.OPEN
+      ) {
+        if (
+          code !== 0 &&
+          code !== null
+        ) {
+          socket.send(
+            `\r\n\x1b[90mCommand exited with code ${code}.\x1b[0m\r\n`
+          );
+        }
+
+        writePrompt(socket);
+      }
+    }
   );
 }
 
@@ -508,27 +1103,15 @@ const httpServer =
               accessToken
             );
 
-          const container =
-            await getOrCreateContainer(
-              userId
-            );
-
-          const ip =
-            await getContainerIp(
-              container
-            );
-
           sendJson(
             response,
             200,
             {
               ok: true,
               userId,
-              container:
-                getContainerName(
-                  userId
-                ),
-              ip,
+              ip: getLocalIp(),
+              mode:
+                "render-shell",
             }
           );
 
@@ -678,6 +1261,7 @@ const httpServer =
                   "Authentication required.",
               }
             );
+
             return;
           }
 
@@ -722,6 +1306,7 @@ const httpServer =
                   "Authentication required.",
               }
             );
+
             return;
           }
 
@@ -730,101 +1315,28 @@ const httpServer =
               accessToken
             );
 
-            const containers =
-              await docker.listContainers({
-                all: true,
-              });
-
-            const labContainers =
-              containers.filter(
-                (container) =>
-                  container.Names.some(
-                    (name) =>
-                      name.includes(
-                        "ictnet101-lab-"
-                      )
-                  )
-              );
-
             const labs =
-              await Promise.all(
-                labContainers.map(
-                  async (
-                    container
-                  ) => {
-                    const name =
-                      container.Names.find(
-                        (item) =>
-                          item.includes(
-                            "ictnet101-lab-"
-                          )
-                      )?.replace(
-                        "/",
-                        ""
-                      ) ??
-                      `ictnet101-lab-${container.Id.slice(
-                        0,
-                        12
-                      )}`;
-
-                    const dockerContainer =
-                      docker.getContainer(
-                        container.Id
-                      );
-
-                    let ip:
-                      | string
-                      | null = null;
-
-                    let created =
-                      container.Created;
-
-                    try {
-                      const info =
-                        await dockerContainer.inspect();
-
-                      const networks =
-                        info
-                          .NetworkSettings
-                          ?.Networks;
-
-                      if (networks) {
-                        const firstNetwork =
-                          Object.values(
-                            networks
-                          )[0];
-
-                        ip =
-                          firstNetwork
-                            ?.IPAddress ??
-                          null;
-                      }
-
-                      if (
-                        info.Created
-                      ) {
-                        created =
-                          new Date(
-                            info.Created
-                          ).getTime();
-                      }
-                    } catch {
-                      ip = null;
-                    }
-
-                    return {
-                      id: container.Id,
-                      name,
-                      status:
-                        container.State,
-                      running:
-                        container.State ===
-                        "running",
-                      ip,
-                      created,
-                    };
-                  }
-                )
+              Array.from(
+                activeSessions.entries()
+              ).map(
+                ([
+                  userId,
+                  session,
+                ]) => ({
+                  id: userId,
+                  name:
+                    `ictnet101-session-${userId.slice(
+                      0,
+                      8
+                    )}`,
+                  status: "active",
+                  running: true,
+                  ip: getLocalIp(),
+                  connectedAt:
+                    session.connectedAt,
+                  lastActivity:
+                    session.lastActivity,
+                })
               );
 
             sendJson(
@@ -894,6 +1406,14 @@ wss.on(
     socket: WebSocket,
     request
   ) => {
+    let userId:
+      | string
+      | null = null;
+
+    let currentCommand = "";
+
+    let escapeSequence = false;
+
     try {
       const requestUrl =
         new URL(
@@ -917,124 +1437,99 @@ wss.on(
         return;
       }
 
-      const userId =
+      userId =
         await verifyAccessToken(
           accessToken
         );
 
-      const container =
-        await getOrCreateContainer(
-          userId
-        );
-
-      const containerIp =
-        await getContainerIp(
-          container
-        );
-
-      const history =
-        getHistory(userId);
-
-      const exec =
-        await container.exec({
-          Cmd: [
-            "/bin/bash",
-            "-i",
-          ],
-          AttachStdin: true,
-          AttachStdout: true,
-          AttachStderr: true,
-          Tty: true,
-          WorkingDir:
-            "/home/student",
-        });
-
-      const stream =
-        await exec.start({
-          hijack: true,
-          stdin: true,
-          Tty: true,
-        });
-
-      let currentCommand =
-        "";
-
-      stream.write(
-        "export PS1='student\\@ictnet101:\\w$ '\n"
+      activeSessions.set(
+        userId,
+        {
+          connectedAt:
+            Date.now(),
+          lastActivity:
+            Date.now(),
+        }
       );
 
-      stream.write(
-        "export TERM=xterm-256color\n"
+      socket.send(
+        "\x1b[1;36mICTNET101 Networking Lab\x1b[0m\r\n"
       );
 
-      stream.write(
-        "clear\n"
+      socket.send(
+        "\x1b[90mRender Linux networking environment\x1b[0m\r\n\r\n"
       );
 
-      stream.write(
-        `echo "ICTNET101 Lab IP: ${
-          containerIp ??
+      socket.send(
+        `ICTNET101 Lab IP: ${
+          getLocalIp() ??
           "unavailable"
-        }"\n`
+        }\r\n\r\n`
       );
 
-      stream.on(
-        "data",
-        (
-          chunk: Buffer
-        ) => {
+      socket.send(
+        "\x1b[1;32mConnected to Linux lab.\x1b[0m\r\n\r\n"
+      );
+
+      socket.send(
+        "\x1b[90mType 'help' to see available commands.\x1b[0m\r\n\r\n"
+      );
+
+      writePrompt(socket);
+
+      const keepAlive =
+        setInterval(() => {
           if (
             socket.readyState ===
             WebSocket.OPEN
           ) {
-            socket.send(
-              chunk.toString(
-                "utf8"
-              )
-            );
+            socket.ping();
           }
-        }
-      );
+        }, 25_000);
 
       socket.on(
         "message",
-        (message) => {
+        async (message) => {
+          if (!userId) {
+            return;
+          }
+
+          activeSessions.set(
+            userId,
+            {
+              ...(activeSessions.get(
+                userId
+              ) ?? {
+                connectedAt:
+                  Date.now(),
+              }),
+              lastActivity:
+                Date.now(),
+            }
+          );
+
           const data =
             message.toString();
 
           for (
-            const char of data
+            let index = 0;
+            index < data.length;
+            index++
           ) {
+            const char =
+              data[index];
+
             if (
-              char === "\r" ||
-              char === "\n"
+              escapeSequence
             ) {
-              const command =
-                currentCommand.trim();
-
-              if (command) {
-                history.push(
-                  command
-                );
-
-                console.log(
-                  `[${userId}] ${command}`
-                );
+              if (
+                /[A-Za-z~]/.test(
+                  char
+                )
+              ) {
+                escapeSequence =
+                  false;
               }
-
-              currentCommand = "";
-
-              continue;
-            }
-
-            if (
-              char === "\u007f"
-            ) {
-              currentCommand =
-                currentCommand.slice(
-                  0,
-                  -1
-                );
 
               continue;
             }
@@ -1042,6 +1537,73 @@ wss.on(
             if (
               char === "\x1b"
             ) {
+              escapeSequence =
+                true;
+
+              continue;
+            }
+
+            if (
+              char === "\x03"
+            ) {
+              currentCommand = "";
+
+              socket.send(
+                "^C\r\n"
+              );
+
+              writePrompt(socket);
+
+              continue;
+            }
+
+            if (
+              char === "\r" ||
+              char === "\n"
+            ) {
+              const command =
+                currentCommand.trim();
+
+              currentCommand = "";
+
+              if (command) {
+                await executeCommand(
+                  socket,
+                  userId,
+                  command
+                );
+              } else {
+                socket.send(
+                  "\r\n"
+                );
+
+                writePrompt(
+                  socket
+                );
+              }
+
+              continue;
+            }
+
+            if (
+              char === "\u007f" ||
+              char === "\b"
+            ) {
+              if (
+                currentCommand.length >
+                0
+              ) {
+                currentCommand =
+                  currentCommand.slice(
+                    0,
+                    -1
+                  );
+
+                socket.send(
+                  "\b \b"
+                );
+              }
+
               continue;
             }
 
@@ -1051,13 +1613,9 @@ wss.on(
             ) {
               currentCommand +=
                 char;
-            }
-          }
 
-          if (
-            !stream.destroyed
-          ) {
-            stream.write(data);
+              socket.send(char);
+            }
           }
         }
       );
@@ -1065,10 +1623,14 @@ wss.on(
       socket.on(
         "close",
         () => {
-          try {
-            stream.end();
-          } catch {
-            // Already closed.
+          clearInterval(
+            keepAlive
+          );
+
+          if (userId) {
+            activeSessions.delete(
+              userId
+            );
           }
         }
       );
@@ -1088,6 +1650,12 @@ wss.on(
 
         socket.close();
       }
+
+      if (userId) {
+        activeSessions.delete(
+          userId
+        );
+      }
     }
   }
 );
@@ -1101,11 +1669,11 @@ httpServer.listen(
     );
 
     console.log(
-      `Terminal: ws://0.0.0.0:${PORT}/terminal`
+      "WebSocket terminal available at /terminal"
     );
 
     console.log(
-      "Assessment checker: /check-task"
+      "Assessment checker available at /check-task"
     );
   }
 );
